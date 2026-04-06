@@ -63,57 +63,62 @@ final class AccessibleDropdownTests: XCTestCase {
 
     // MARK: Accessibility element identity
 
-    func test_isAccessibilityElement_isTrue() {
-        XCTAssertTrue(dropdown.isAccessibilityElement,
-            "The dropdown control must be a single accessibility element")
+    func test_isAccessibilityElement_isFalse() {
+        XCTAssertFalse(dropdown.isAccessibilityElement,
+            "The dropdown container must not be a single accessibility element to allow subviews to be reachable.")
     }
 
-    func test_accessibilityTraits_containsButton() {
+    func test_triggerContainer_isAccessibilityElement_isTrue() {
+        XCTAssertTrue(dropdown.triggerContainer.isAccessibilityElement,
+            "The trigger row must be an accessibility element.")
+    }
+
+    func test_triggerContainer_accessibilityTraits_containsButton() {
         XCTAssertTrue(
-            dropdown.accessibilityTraits.contains(.button),
+            dropdown.triggerContainer.accessibilityTraits.contains(.button),
             "Trigger must have .button trait so VoiceOver announces it as interactive"
         )
     }
 
     // MARK: Accessibility label
 
-    func test_accessibilityLabel_equalsFieldLabel() {
-        XCTAssertEqual(dropdown.accessibilityLabel, "Country")
+    func test_triggerContainer_accessibilityLabel_equalsFieldLabel() {
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityLabel, "Country")
     }
 
-    func test_accessibilityLabel_updatesWhenFieldLabelChanges() {
+    func test_triggerContainer_accessibilityLabel_updatesWhenFieldLabelChanges() {
         dropdown.fieldLabel = "Language"
-        XCTAssertEqual(dropdown.accessibilityLabel, "Language")
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityLabel, "Language")
     }
 
     // MARK: Accessibility value
 
-    func test_accessibilityValue_isPlaceholderWhenNothingSelected() {
-        XCTAssertEqual(dropdown.accessibilityValue, "Select a country")
+    func test_triggerContainer_accessibilityValue_isPlaceholderWhenNothingSelected() {
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityValue, "Select a country")
     }
 
-    func test_accessibilityValue_equalsSelectedOptionTitle_afterSelection() {
+    func test_triggerContainer_accessibilityValue_equalsSelectedOptionTitle_afterSelection() {
         dropdown.setSelectedOption(sampleOptions[0])
-        XCTAssertEqual(dropdown.accessibilityValue, "India")
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityValue, "India")
     }
 
-    func test_accessibilityValue_updatesOnNewSelection() {
+    func test_triggerContainer_accessibilityValue_updatesOnNewSelection() {
         dropdown.setSelectedOption(sampleOptions[0])
         dropdown.setSelectedOption(sampleOptions[1])
-        XCTAssertEqual(dropdown.accessibilityValue, "USA")
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityValue, "USA")
     }
 
     // MARK: Accessibility hint
 
-    func test_accessibilityHint_isExpandHint_whenClosed() {
+    func test_triggerContainer_accessibilityHint_isExpandHint_whenClosed() {
         XCTAssertFalse(dropdown.isExpanded)
-        XCTAssertEqual(dropdown.accessibilityHint,
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityHint,
                        dropdown.configuration.collapsedHint)
     }
 
-    func test_accessibilityHint_isCollapseHint_whenExpanded() {
+    func test_triggerContainer_accessibilityHint_isCollapseHint_whenExpanded() {
         dropdown.expand()
-        XCTAssertEqual(dropdown.accessibilityHint,
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityHint,
                        dropdown.configuration.expandedHint)
     }
 
@@ -219,17 +224,7 @@ final class AccessibleDropdownTests: XCTestCase {
         config.collapsedHint = "Tap to open."
         dropdown.configuration = config
         XCTAssertFalse(dropdown.isExpanded)
-        XCTAssertEqual(dropdown.accessibilityHint, "Tap to open.")
-    }
-
-    func test_customConfiguration_appliesNewPlaceholderLabel() {
-        var config = AccessibleDropdownConfiguration()
-        config.placeholderAccessibilityLabel = "Choose your country"
-        dropdown.configuration = config
-        XCTAssertEqual(
-            config.placeholderAccessibilityLabel,
-            "Choose your country"
-        )
+        XCTAssertEqual(dropdown.triggerContainer.accessibilityHint, "Tap to open.")
     }
 }
 

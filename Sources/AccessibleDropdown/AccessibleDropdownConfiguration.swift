@@ -86,7 +86,9 @@ public struct AccessibleDropdownTheme {
     public var fieldLabelFont:      UIFont
 
     // MARK: Sizing
+    /// Minimum height of the trigger row. Will grow if font size requires it.
     public var triggerHeight:       CGFloat
+    /// Minimum height of each option row. Will grow if content requires it.
     public var optionRowHeight:     CGFloat
     public var cornerRadius:        CGFloat
     public var borderWidth:         CGFloat
@@ -175,11 +177,11 @@ public struct AccessibleDropdownConfiguration {
     public var menuShadowRadius: CGFloat = 8
 
     // MARK: Accessibility strings — localise these for each language
-    public var collapsedHint:          String = "Double tap to expand options."
-    public var expandedHint:           String = "Double tap to collapse options."
+    public var collapsedHint:          String = "Expands the list of options."
+    public var expandedHint:           String = "Collapses the list of options."
     public var selectedSuffix:         String = "selected"
-    public var menuOpenedAnnouncement: String = "Menu expanded."
-    public var menuClosedAnnouncement: String = "Menu collapsed."
+    public var menuOpenedAnnouncement: String = "Options menu expanded."
+    public var menuClosedAnnouncement: String = "Options menu collapsed."
 
     // MARK: Init
     public init() {}

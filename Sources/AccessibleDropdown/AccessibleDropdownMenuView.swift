@@ -119,7 +119,8 @@ final class AccessibleDropdownMenuView: UIView {
         clipContainer.layer.borderColor     = t.triggerBorder.cgColor
 
         tableView.separatorColor            = t.separator
-        tableView.rowHeight                 = t.optionRowHeight
+        tableView.rowHeight                 = UITableView.automaticDimension
+        tableView.estimatedRowHeight        = t.optionRowHeight
         tableView.backgroundColor           = t.menuBackground
 
         // Shadow — only in overlay mode if enabled
@@ -169,7 +170,7 @@ final class AccessibleDropdownMenuView: UIView {
     func moveFocusToFirstOption() {
         guard !options.isEmpty else { return }
         let idx = options.firstIndex(where: { !$0.isDisabled }) ?? 0
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let cell = self?.tableView.cellForRow(
                 at: IndexPath(row: idx, section: 0)) else { return }
             UIAccessibility.post(notification: .layoutChanged, argument: cell)

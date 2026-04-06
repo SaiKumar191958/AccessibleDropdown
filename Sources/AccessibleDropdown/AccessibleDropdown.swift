@@ -45,7 +45,10 @@ open class AccessibleDropdown: UIControl {
     }
 
     public var placeholder: String = "Select an option" {
-        didSet { updateTriggerTitle() }
+        didSet {
+            updateTriggerTitle()
+            updateAccessibility()
+        }
     }
 
     public var options: [AccessibleDropdownOption] = [] {
@@ -89,7 +92,7 @@ open class AccessibleDropdown: UIControl {
         return l
     }()
 
-    private let triggerContainer: UIView = {
+    let triggerContainer: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
         v.layer.masksToBounds = true
@@ -100,6 +103,7 @@ open class AccessibleDropdown: UIControl {
         let l = UILabel()
         l.translatesAutoresizingMaskIntoConstraints = false
         l.adjustsFontForContentSizeCategory = true
+        l.numberOfLines = 0
         l.isAccessibilityElement = false
         return l
     }()
@@ -147,20 +151,28 @@ open class AccessibleDropdown: UIControl {
     // MARK: - Setup
 
     private func setup() {
-        isAccessibilityElement = true
-        accessibilityTraits    = .button
-
+        isAccessibilityElement = false
+        
         // Trigger row
         triggerContainer.addSubview(triggerValueLabel)
         triggerContainer.addSubview(chevronView)
+        
+        // Make triggerContainer the primary focus element when menu is closed
+        triggerContainer.isAccessibilityElement = true
+        triggerContainer.accessibilityTraits    = .button
 
         NSLayoutConstraint.activate([
             triggerValueLabel.leadingAnchor.constraint(
                 equalTo: triggerContainer.leadingAnchor, constant: 14),
+            triggerValueLabel.topAnchor.constraint(
+                greaterThanOrEqualTo: triggerContainer.topAnchor, constant: 8),
+            triggerValueLabel.bottomAnchor.constraint(
+                lessThanOrEqualTo: triggerContainer.bottomAnchor, constant: -8),
             triggerValueLabel.centerYAnchor.constraint(
                 equalTo: triggerContainer.centerYAnchor),
             triggerValueLabel.trailingAnchor.constraint(
                 equalTo: chevronView.leadingAnchor, constant: -8),
+
             chevronView.trailingAnchor.constraint(
                 equalTo: triggerContainer.trailingAnchor, constant: -14),
             chevronView.centerYAnchor.constraint(
@@ -235,6 +247,7 @@ open class AccessibleDropdown: UIControl {
         overlayMenuView.configuration = configuration
 
         updateTriggerTitle()
+        updateAccessibility()
         invalidateIntrinsicContentSize()
     }
 
@@ -253,9 +266,9 @@ open class AccessibleDropdown: UIControl {
     // MARK: - Accessibility
 
     private func updateAccessibility() {
-        accessibilityLabel = fieldLabel.isEmpty ? nil : fieldLabel
-        accessibilityValue = selectedOption?.title ?? placeholder
-        accessibilityHint  = isExpanded
+        triggerContainer.accessibilityLabel = fieldLabel.isEmpty ? nil : fieldLabel
+        triggerContainer.accessibilityValue = selectedOption?.title ?? placeholder
+        triggerContainer.accessibilityHint  = isExpanded
             ? configuration.expandedHint
             : configuration.collapsedHint
     }
@@ -292,7 +305,7 @@ open class AccessibleDropdown: UIControl {
         }
 
         if returnFocus {
-            UIAccessibility.post(notification: .layoutChanged, argument: self)
+            UIAccessibility.post(notification: .layoutChanged, argument: triggerContainer)
         }
         UIAccessibility.post(notification: .announcement,
                              argument: configuration.menuClosedAnnouncement)
