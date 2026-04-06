@@ -8,53 +8,70 @@ import SwiftUI
 
 // MARK: - AccessibleDropdownView
 ///
-/// SwiftUI wrapper for AccessibleDropdown (UIKit).
+/// SwiftUI wrapper — supports overlay and inline expansion + full theming.
 ///
-/// ## What changed from v1
+/// ── Overlay (default) ────────────────────────────────────────────────
+/// The menu floats above sibling views. The dropdown's frame stays
+/// constant whether the menu is open or closed.
 ///
-/// The wrapper no longer needs a fixed `.frame(height:)` in the caller.
-/// Because the floating menu lives in the UIWindow (not inside this view),
-/// `AccessibleDropdown.intrinsicContentSize` only accounts for the label +
-/// trigger row — the SwiftUI layout engine always gets the correct size
-/// regardless of whether the menu is open or closed.
+///   AccessibleDropdownView(
+///       label: "Country",
+///       options: countries,
+///       selected: $selected
+///   )
+///   // No .frame() needed.
 ///
-/// ## Usage in LoginView
-/// ```swift
-/// // BEFORE (v1) — fixed frame caused clipping / dead space:
-/// AccessibleDropdownView(...)
-///     .frame(height: 200)   // ← remove this
+/// ── Inline ───────────────────────────────────────────────────────────
+/// The menu expands inside the layout, pushing siblings down.
 ///
-/// // AFTER (v2) — let intrinsicContentSize drive the height:
-/// AccessibleDropdownView(
-///     label: "Country code",
-///     placeholder: "Select country",
-///     options: viewModel.dropdownOptions,
-///     selected: $selectedCountry
-/// )
-/// .padding()
-/// ```
+///   AccessibleDropdownView(
+///       label: "Country",
+///       options: countries,
+///       selected: $selected,
+///       configuration: .style(.inline)
+///   )
+///
+/// ── Custom theme ─────────────────────────────────────────────────────
+///
+///   let myTheme = AccessibleDropdownTheme(
+///       triggerBackground : UIColor(named: "Surface")!,
+///       triggerBorder     : UIColor(named: "Purple")!,
+///       optionSelectedBg  : UIColor(named: "Purple")!.withAlphaComponent(0.15),
+///       optionSelectedText: UIColor(named: "Purple")!,
+///       chevron           : UIColor(named: "Purple")!,
+///       triggerFont       : UIFont(name: "AvenirNext-Medium", size: 16)!,
+///       cornerRadius      : 12,
+///       triggerHeight     : 50
+///   )
+///
+///   AccessibleDropdownView(
+///       label: "Country",
+///       options: countries,
+///       selected: $selected,
+///       configuration: .themed(myTheme, expansionStyle: .overlay)
+///   )
 ///
 @available(iOS 14.0, *)
 public struct AccessibleDropdownView: UIViewRepresentable {
 
     // MARK: - Properties
 
-    public let label: String
-    public let placeholder: String
-    public let options: [AccessibleDropdownOption]
+    public let label:         String
+    public let placeholder:   String
+    public let options:       [AccessibleDropdownOption]
     @Binding public var selected: AccessibleDropdownOption?
     public var configuration: AccessibleDropdownConfiguration = .init()
-    public var onSelect: ((AccessibleDropdownOption) -> Void)?
+    public var onSelect:      ((AccessibleDropdownOption) -> Void)?
 
     // MARK: - Init
 
     public init(
-        label: String,
-        placeholder: String = "Select an option",
-        options: [AccessibleDropdownOption],
-        selected: Binding<AccessibleDropdownOption?>,
+        label:         String,
+        placeholder:   String = "Select an option",
+        options:       [AccessibleDropdownOption],
+        selected:      Binding<AccessibleDropdownOption?>,
         configuration: AccessibleDropdownConfiguration = .init(),
-        onSelect: ((AccessibleDropdownOption) -> Void)? = nil
+        onSelect:      ((AccessibleDropdownOption) -> Void)? = nil
     ) {
         self.label         = label
         self.placeholder   = placeholder
@@ -76,7 +93,6 @@ public struct AccessibleDropdownView: UIViewRepresentable {
             selected = option
             onSelect?(option)
         }
-        // Allow the view to shrink/grow with its intrinsicContentSize
         dropdown.setContentHuggingPriority(.required, for: .vertical)
         dropdown.setContentCompressionResistancePriority(.required, for: .vertical)
         return dropdown
@@ -87,7 +103,6 @@ public struct AccessibleDropdownView: UIViewRepresentable {
         uiView.placeholder   = placeholder
         uiView.options       = options
         uiView.configuration = configuration
-        // Only push new selection when it actually differs
         if uiView.selectedOption?.id != selected?.id {
             uiView.setSelectedOption(selected)
         }

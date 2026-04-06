@@ -12,38 +12,36 @@ public protocol AccessibleDropdownDelegate: AnyObject {
 
 // MARK: - AccessibleDropdown
 ///
-/// v2 Architecture
-/// ───────────────
-/// The trigger row and the option menu are completely separate views.
+/// Supports two expansion styles set via `configuration.expansionStyle`:
 ///
-///  ┌─────────────────────────────┐  ← AccessibleDropdown  (this UIControl)
-///  │  Country code label         │    Lives in SwiftUI layout.
-///  │  [ India              ▾ ]   │    intrinsicContentSize = label + 44 pt.
-///  └─────────────────────────────┘    SwiftUI does NOT need a fixed .frame().
+///  .overlay  ──────────────────────────────────────────────────────────
 ///
-///  When the user taps the trigger:
+///   ┌─────────────────┐   Menu is added to UIWindow.
+///   │  Label          │   Siblings are NOT moved.
+///   │ [ Selected ▾ ]  │   Good for tight layouts.
+///   └─────────────────┘
+///       ┌─────────────────┐  ← floating in window
+///       │  Option A  ✓   │
+///       │  Option B      │
+///       └─────────────────┘
+///   ┌─────────────────┐   ← Phone field stays put
 ///
-///  ┌─────────────────────────────┐  ← AccessibleDropdownMenuView
-///  │  India                  ✓  │    Added directly to the UIWindow.
-///  │  USA                       │    Positioned via triggerContainer's frame
-///  │  UK                        │    converted to window coordinates.
-///  └─────────────────────────────┘    Removed from window on collapse.
+///  .inline  ───────────────────────────────────────────────────────────
 ///
-/// Key fixes vs v1
-/// ───────────────
-/// 1. Menu is a floating window overlay — SwiftUI layout never affected.
-/// 2. Tap gesture is on triggerContainer only — not the whole UIControl.
-///    (v1's beginTracking fired anywhere inside the control bounds.)
-/// 3. VoiceOver: trigger is the single a11y element for the closed state.
-///    Once open, each option cell is a separate focusable element.
-/// 4. LoginView no longer needs .frame(height: 200) — remove that.
+///   ┌─────────────────┐
+///   │  Label          │
+///   │ [ Selected ▾ ]  │
+///   │  Option A  ✓   │  ← menu is a subview; VStack pushes Phone field
+///   │  Option B      │    down automatically
+///   └─────────────────┘
+///   ┌─────────────────┐   ← Phone field pushed down
 ///
 open class AccessibleDropdown: UIControl {
 
     // MARK: - Public API
 
     public var fieldLabel: String = "" {
-        didSet { floatingLabel.text = fieldLabel; updateAccessibility() }
+        didSet { fieldLabelView.text = fieldLabel; updateAccessibility() }
     }
 
     public var placeholder: String = "Select an option" {
@@ -51,12 +49,17 @@ open class AccessibleDropdown: UIControl {
     }
 
     public var options: [AccessibleDropdownOption] = [] {
-        didSet { floatingMenu.options = options }
+        didSet {
+            menuView.options = options
+            if configuration.expansionStyle == .inline {
+                invalidateIntrinsicContentSize()
+            }
+        }
     }
 
     public private(set) var selectedOption: AccessibleDropdownOption? {
         didSet {
-            floatingMenu.selectedOption = selectedOption
+            menuView.selectedOption = selectedOption
             updateTriggerTitle()
             updateAccessibility()
         }
@@ -75,9 +78,9 @@ open class AccessibleDropdown: UIControl {
 
     public private(set) var isExpanded = false
 
-    // MARK: - Subviews  (trigger only)
+    // MARK: - Subviews
 
-    private let floatingLabel: UILabel = {
+    private let fieldLabelView: UILabel = {
         let l = UILabel()
         l.translatesAutoresizingMaskIntoConstraints = false
         l.adjustsFontForContentSizeCategory = true
@@ -89,7 +92,6 @@ open class AccessibleDropdown: UIControl {
     private let triggerContainer: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
-        v.layer.borderWidth = 1
         v.layer.masksToBounds = true
         return v
     }()
@@ -102,7 +104,7 @@ open class AccessibleDropdown: UIControl {
         return l
     }()
 
-    private let chevronImageView: UIImageView = {
+    private let chevronView: UIImageView = {
         let iv = UIImageView(image: UIImage(systemName: "chevron.down"))
         iv.translatesAutoresizingMaskIntoConstraints = false
         iv.contentMode = .scaleAspectFit
@@ -111,13 +113,18 @@ open class AccessibleDropdown: UIControl {
         return iv
     }()
 
-    // MARK: - Floating menu (attached to UIWindow when open)
+    // Inline menu — lives inside this view's hierarchy
+    private let menuView = AccessibleDropdownMenuView()
 
-    private let floatingMenu = AccessibleDropdownMenuView()
+    // Overlay menu — lives in the UIWindow
+    private let overlayMenuView = AccessibleDropdownMenuView()
 
     // MARK: - Constraints
 
     private var triggerHeightConstraint: NSLayoutConstraint!
+
+    // Inline mode: menu height animates between 0 and preferredHeight
+    private var inlineMenuHeightConstraint: NSLayoutConstraint!
 
     // MARK: - Init
 
@@ -135,7 +142,7 @@ open class AccessibleDropdown: UIControl {
         updateAccessibility()
     }
 
-    deinit { floatingMenu.removeFromSuperview() }
+    deinit { overlayMenuView.removeFromSuperview() }
 
     // MARK: - Setup
 
@@ -143,9 +150,9 @@ open class AccessibleDropdown: UIControl {
         isAccessibilityElement = true
         accessibilityTraits    = .button
 
-        // Trigger row layout
+        // Trigger row
         triggerContainer.addSubview(triggerValueLabel)
-        triggerContainer.addSubview(chevronImageView)
+        triggerContainer.addSubview(chevronView)
 
         NSLayoutConstraint.activate([
             triggerValueLabel.leadingAnchor.constraint(
@@ -153,84 +160,97 @@ open class AccessibleDropdown: UIControl {
             triggerValueLabel.centerYAnchor.constraint(
                 equalTo: triggerContainer.centerYAnchor),
             triggerValueLabel.trailingAnchor.constraint(
-                equalTo: chevronImageView.leadingAnchor, constant: -8),
-
-            chevronImageView.trailingAnchor.constraint(
+                equalTo: chevronView.leadingAnchor, constant: -8),
+            chevronView.trailingAnchor.constraint(
                 equalTo: triggerContainer.trailingAnchor, constant: -14),
-            chevronImageView.centerYAnchor.constraint(
+            chevronView.centerYAnchor.constraint(
                 equalTo: triggerContainer.centerYAnchor),
-            chevronImageView.widthAnchor.constraint(equalToConstant: 16),
-            chevronImageView.heightAnchor.constraint(equalToConstant: 16)
+            chevronView.widthAnchor.constraint(equalToConstant: 16),
+            chevronView.heightAnchor.constraint(equalToConstant: 16)
         ])
 
-        addSubview(floatingLabel)
+        // Inline menu — starts at 0 height, clipped
+        menuView.translatesAutoresizingMaskIntoConstraints = false
+        menuView.clipsToBounds = true
+        menuView.isAccessibilityElement = false
+
+        addSubview(fieldLabelView)
         addSubview(triggerContainer)
+        addSubview(menuView)
 
         triggerHeightConstraint = triggerContainer.heightAnchor.constraint(
             greaterThanOrEqualToConstant: 44)
 
+        inlineMenuHeightConstraint = menuView.heightAnchor.constraint(
+            equalToConstant: 0)
+        inlineMenuHeightConstraint.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
-            floatingLabel.topAnchor.constraint(equalTo: topAnchor),
-            floatingLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
-            floatingLabel.trailingAnchor.constraint(equalTo: trailingAnchor),
+            fieldLabelView.topAnchor.constraint(equalTo: topAnchor),
+            fieldLabelView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            fieldLabelView.trailingAnchor.constraint(equalTo: trailingAnchor),
 
             triggerContainer.topAnchor.constraint(
-                equalTo: floatingLabel.bottomAnchor, constant: 4),
+                equalTo: fieldLabelView.bottomAnchor, constant: 4),
             triggerContainer.leadingAnchor.constraint(equalTo: leadingAnchor),
             triggerContainer.trailingAnchor.constraint(equalTo: trailingAnchor),
-            // Trigger bottom pins the control's bottom — no menu below this view
-            triggerContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
-            triggerHeightConstraint
+            triggerHeightConstraint,
+
+            menuView.topAnchor.constraint(
+                equalTo: triggerContainer.bottomAnchor, constant: 0),
+            menuView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            menuView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            menuView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            inlineMenuHeightConstraint
         ])
 
-        // ── Tap only on the trigger row ──
-        // Using a gesture recogniser instead of beginTracking/endTracking
-        // so taps inside the floating menu (which is outside this view's bounds)
-        // never accidentally toggle the dropdown.
+        // Tap only on trigger row
         let tap = UITapGestureRecognizer(target: self, action: #selector(triggerTapped))
         triggerContainer.addGestureRecognizer(tap)
+        triggerContainer.isUserInteractionEnabled = true
 
-        // Floating menu callbacks
-        floatingMenu.onSelect = { [weak self] option in
-            self?.commitSelection(option)
-        }
-        floatingMenu.onDismiss = { [weak self] in
-            // User tapped outside the menu
-            self?.collapse(returnFocus: true)
+        // Wire both menus
+        for m in [menuView, overlayMenuView] {
+            m.onSelect  = { [weak self] opt in self?.commitSelection(opt) }
+            m.onDismiss = { [weak self] in self?.collapse(returnFocus: true) }
         }
     }
 
-    // MARK: - Configuration theming
+    // MARK: - Configuration
 
     private func applyConfiguration() {
-        let c = configuration
+        let t = configuration.theme
 
-        floatingLabel.font      = c.floatingLabelFont
-        floatingLabel.textColor = c.floatingLabelColor
+        fieldLabelView.font              = t.fieldLabelFont
+        fieldLabelView.textColor         = t.fieldLabel
+        triggerValueLabel.font           = t.triggerFont
+        chevronView.tintColor            = t.chevron
+        triggerContainer.backgroundColor = t.triggerBackground
+        triggerContainer.layer.borderColor  = t.triggerBorder.cgColor
+        triggerContainer.layer.borderWidth  = t.borderWidth
+        triggerContainer.layer.cornerRadius = t.cornerRadius
+        triggerHeightConstraint.constant    = t.triggerHeight
 
-        triggerValueLabel.font  = c.triggerFont
-        chevronImageView.tintColor = c.chevronTintColor
+        menuView.configuration        = configuration
+        overlayMenuView.configuration = configuration
 
-        triggerContainer.backgroundColor      = c.triggerBackgroundColor
-        triggerContainer.layer.borderColor    = c.triggerBorderColor.cgColor
-        triggerContainer.layer.cornerRadius   = c.cornerRadius
-
-        triggerHeightConstraint.constant = c.triggerMinHeight
-        floatingMenu.configuration       = c
         updateTriggerTitle()
+        invalidateIntrinsicContentSize()
     }
 
-    // MARK: - Trigger title & accessibility
+    // MARK: - Trigger display
 
     private func updateTriggerTitle() {
         if let sel = selectedOption {
             triggerValueLabel.text      = sel.title
-            triggerValueLabel.textColor = configuration.triggerTextColor
+            triggerValueLabel.textColor = configuration.theme.triggerText
         } else {
             triggerValueLabel.text      = placeholder
-            triggerValueLabel.textColor = configuration.placeholderColor
+            triggerValueLabel.textColor = configuration.theme.placeholder
         }
     }
+
+    // MARK: - Accessibility
 
     private func updateAccessibility() {
         accessibilityLabel = fieldLabel.isEmpty ? nil : fieldLabel
@@ -247,61 +267,29 @@ open class AccessibleDropdown: UIControl {
         sendActions(for: .valueChanged)
     }
 
-    /// Opens the floating menu positioned directly below the trigger.
     public func expand() {
-        guard !isExpanded, let window = window else { return }
+        guard !isExpanded else { return }
         isExpanded = true
-
-        // Convert trigger frame to window coordinates
-        let triggerInWindow = triggerContainer.convert(
-            triggerContainer.bounds, to: window)
-
-        // Max height: space between trigger bottom and safe-area bottom
-        let safeBottom = window.bounds.height - window.safeAreaInsets.bottom - 8
-        let availableHeight = safeBottom - (triggerInWindow.maxY + 4)
-        let menuHeight = min(floatingMenu.preferredHeight, max(availableHeight, 0))
-
-        let menuFrame = CGRect(
-            x:      triggerInWindow.minX,
-            y:      triggerInWindow.maxY + 4,
-            width:  triggerInWindow.width,
-            height: menuHeight
-        )
-
-        floatingMenu.translatesAutoresizingMaskIntoConstraints = true
-        floatingMenu.frame = menuFrame
-        floatingMenu.alpha = 0
-        floatingMenu.options        = options
-        floatingMenu.selectedOption = selectedOption
-        window.addSubview(floatingMenu)
-
         updateAccessibility()
 
-        UIView.animate(withDuration: configuration.animationDuration) {
-            self.floatingMenu.alpha = 1
-            self.chevronImageView.transform = CGAffineTransform(rotationAngle: .pi)
+        switch configuration.expansionStyle {
+        case .overlay:  expandOverlay()
+        case .inline:   expandInline()
         }
 
         UIAccessibility.post(notification: .announcement,
                              argument: configuration.menuOpenedAnnouncement)
-        floatingMenu.moveFocusToFirstOption()
     }
 
-    /// Closes the floating menu.
     public func collapse(returnFocus: Bool = false) {
         guard isExpanded else { return }
         isExpanded = false
-
-        UIView.animate(
-            withDuration: configuration.animationDuration,
-            animations: {
-                self.floatingMenu.alpha = 0
-                self.chevronImageView.transform = .identity
-            },
-            completion: { _ in self.floatingMenu.removeFromSuperview() }
-        )
-
         updateAccessibility()
+
+        switch configuration.expansionStyle {
+        case .overlay:  collapseOverlay()
+        case .inline:   collapseInline()
+        }
 
         if returnFocus {
             UIAccessibility.post(notification: .layoutChanged, argument: self)
@@ -317,33 +305,116 @@ open class AccessibleDropdown: UIControl {
         delegate?.accessibleDropdown(self, didSelect: option)
     }
 
-    // MARK: - Reposition on rotation
+    // MARK: - Overlay mode
+
+    private func expandOverlay() {
+        guard let window = window else { return }
+
+        let triggerRect = triggerContainer.convert(triggerContainer.bounds, to: window)
+        let safeBottom  = window.bounds.height - window.safeAreaInsets.bottom - 8
+        let available   = safeBottom - (triggerRect.maxY + 4)
+        let menuHeight  = min(overlayMenuView.preferredHeight(config: configuration),
+                              max(available, 0))
+
+        overlayMenuView.translatesAutoresizingMaskIntoConstraints = true
+        overlayMenuView.frame = CGRect(
+            x:      triggerRect.minX,
+            y:      triggerRect.maxY + 4,
+            width:  triggerRect.width,
+            height: menuHeight
+        )
+        overlayMenuView.alpha   = 0
+        overlayMenuView.options = options
+        overlayMenuView.selectedOption = selectedOption
+
+        window.addSubview(overlayMenuView)
+
+        UIView.animate(withDuration: configuration.animationDuration) {
+            self.overlayMenuView.alpha = 1
+            self.chevronView.transform = CGAffineTransform(rotationAngle: .pi)
+        }
+        overlayMenuView.moveFocusToFirstOption()
+    }
+
+    private func collapseOverlay() {
+        UIView.animate(
+            withDuration: configuration.animationDuration,
+            animations: {
+                self.overlayMenuView.alpha = 0
+                self.chevronView.transform = .identity
+            },
+            completion: { _ in self.overlayMenuView.removeFromSuperview() }
+        )
+    }
+
+    // MARK: - Inline mode
+
+    private func expandInline() {
+        menuView.options        = options
+        menuView.selectedOption = selectedOption
+        menuView.isHidden       = false
+
+        let targetHeight = menuView.preferredHeight(config: configuration)
+        inlineMenuHeightConstraint.constant = 0
+        layoutIfNeeded()
+
+        UIView.animate(withDuration: configuration.animationDuration) {
+            self.inlineMenuHeightConstraint.constant = targetHeight
+            self.chevronView.transform = CGAffineTransform(rotationAngle: .pi)
+            // This tells the parent SwiftUI VStack / UIKit superview to resize
+            self.invalidateIntrinsicContentSize()
+            self.superview?.layoutIfNeeded()
+        }
+        menuView.moveFocusToFirstOption()
+    }
+
+    private func collapseInline() {
+        UIView.animate(
+            withDuration: configuration.animationDuration,
+            animations: {
+                self.inlineMenuHeightConstraint.constant = 0
+                self.chevronView.transform = .identity
+                self.invalidateIntrinsicContentSize()
+                self.superview?.layoutIfNeeded()
+            },
+            completion: { _ in self.menuView.isHidden = true }
+        )
+    }
+
+    // MARK: - Reposition overlay on rotation
 
     open override func layoutSubviews() {
         super.layoutSubviews()
-        guard isExpanded, let window = window else { return }
+        guard isExpanded,
+              configuration.expansionStyle == .overlay,
+              let window = window else { return }
 
-        let triggerInWindow = triggerContainer.convert(
-            triggerContainer.bounds, to: window)
-        let safeBottom = window.bounds.height - window.safeAreaInsets.bottom - 8
-        let availableHeight = safeBottom - (triggerInWindow.maxY + 4)
-        let menuHeight = min(floatingMenu.preferredHeight, max(availableHeight, 0))
+        let triggerRect = triggerContainer.convert(triggerContainer.bounds, to: window)
+        let safeBottom  = window.bounds.height - window.safeAreaInsets.bottom - 8
+        let available   = safeBottom - (triggerRect.maxY + 4)
+        let menuHeight  = min(overlayMenuView.preferredHeight(config: configuration),
+                              max(available, 0))
 
         UIView.animate(withDuration: 0.15) {
-            self.floatingMenu.frame = CGRect(
-                x:      triggerInWindow.minX,
-                y:      triggerInWindow.maxY + 4,
-                width:  triggerInWindow.width,
-                height: menuHeight
+            self.overlayMenuView.frame = CGRect(
+                x: triggerRect.minX, y: triggerRect.maxY + 4,
+                width: triggerRect.width, height: menuHeight
             )
         }
     }
 
-    // MARK: - Intrinsic size  (trigger + label only, no menu contribution)
+    // MARK: - Intrinsic size
+    // Inline: includes menu height when expanded.
+    // Overlay: trigger + label only (menu lives in window).
 
     open override var intrinsicContentSize: CGSize {
-        let labelH   = floatingLabel.intrinsicContentSize.height + 4
-        let triggerH = max(configuration.triggerMinHeight, 44)
-        return CGSize(width: UIView.noIntrinsicMetric, height: labelH + triggerH)
+        let labelH   = fieldLabelView.intrinsicContentSize.height + 4
+        let triggerH = max(configuration.theme.triggerHeight, 44)
+        var total    = labelH + triggerH
+
+        if isExpanded && configuration.expansionStyle == .inline {
+            total += menuView.preferredHeight(config: configuration)
+        }
+        return CGSize(width: UIView.noIntrinsicMetric, height: total)
     }
 }
