@@ -4,46 +4,49 @@
 //
 //  Created by Sai Babu on 06/04/26.
 //
-
 import SwiftUI
 
 // MARK: - AccessibleDropdownView
-/// SwiftUI wrapper around AccessibleDropdown (UIKit).
-/// Fully compatible with SwiftUI's accessibility modifiers.
 ///
-/// ## Usage
+/// SwiftUI wrapper for AccessibleDropdown (UIKit).
+///
+/// ## What changed from v1
+///
+/// The wrapper no longer needs a fixed `.frame(height:)` in the caller.
+/// Because the floating menu lives in the UIWindow (not inside this view),
+/// `AccessibleDropdown.intrinsicContentSize` only accounts for the label +
+/// trigger row — the SwiftUI layout engine always gets the correct size
+/// regardless of whether the menu is open or closed.
+///
+/// ## Usage in LoginView
 /// ```swift
-/// @State private var selected: AccessibleDropdownOption?
+/// // BEFORE (v1) — fixed frame caused clipping / dead space:
+/// AccessibleDropdownView(...)
+///     .frame(height: 200)   // ← remove this
 ///
-/// let countries = [
-///     AccessibleDropdownOption(title: "India"),
-///     AccessibleDropdownOption(title: "USA"),
-///     AccessibleDropdownOption(title: "UK")
-/// ]
-///
+/// // AFTER (v2) — let intrinsicContentSize drive the height:
 /// AccessibleDropdownView(
-///     label: "Country",
-///     placeholder: "Select a country",
-///     options: countries,
-///     selected: $selected
+///     label: "Country code",
+///     placeholder: "Select country",
+///     options: viewModel.dropdownOptions,
+///     selected: $selectedCountry
 /// )
-/// .frame(height: 80)
+/// .padding()
 /// ```
+///
 @available(iOS 14.0, *)
 public struct AccessibleDropdownView: UIViewRepresentable {
 
-    // MARK: Properties
+    // MARK: - Properties
 
     public let label: String
     public let placeholder: String
     public let options: [AccessibleDropdownOption]
-
     @Binding public var selected: AccessibleDropdownOption?
-
     public var configuration: AccessibleDropdownConfiguration = .init()
     public var onSelect: ((AccessibleDropdownOption) -> Void)?
 
-    // MARK: Init
+    // MARK: - Init
 
     public init(
         label: String,
@@ -53,34 +56,38 @@ public struct AccessibleDropdownView: UIViewRepresentable {
         configuration: AccessibleDropdownConfiguration = .init(),
         onSelect: ((AccessibleDropdownOption) -> Void)? = nil
     ) {
-        self.label = label
-        self.placeholder = placeholder
-        self.options = options
-        self._selected = selected
+        self.label         = label
+        self.placeholder   = placeholder
+        self.options       = options
+        self._selected     = selected
         self.configuration = configuration
-        self.onSelect = onSelect
+        self.onSelect      = onSelect
     }
 
-    // MARK: UIViewRepresentable
+    // MARK: - UIViewRepresentable
 
     public func makeUIView(context: Context) -> AccessibleDropdown {
-        let dropdown = AccessibleDropdown()
-        dropdown.fieldLabel = label
-        dropdown.placeholder = placeholder
-        dropdown.options = options
+        let dropdown           = AccessibleDropdown()
+        dropdown.fieldLabel    = label
+        dropdown.placeholder   = placeholder
+        dropdown.options       = options
         dropdown.configuration = configuration
-        dropdown.onSelect = { option in
+        dropdown.onSelect      = { option in
             selected = option
             onSelect?(option)
         }
+        // Allow the view to shrink/grow with its intrinsicContentSize
+        dropdown.setContentHuggingPriority(.required, for: .vertical)
+        dropdown.setContentCompressionResistancePriority(.required, for: .vertical)
         return dropdown
     }
 
     public func updateUIView(_ uiView: AccessibleDropdown, context: Context) {
-        uiView.fieldLabel = label
-        uiView.placeholder = placeholder
-        uiView.options = options
+        uiView.fieldLabel    = label
+        uiView.placeholder   = placeholder
+        uiView.options       = options
         uiView.configuration = configuration
+        // Only push new selection when it actually differs
         if uiView.selectedOption?.id != selected?.id {
             uiView.setSelectedOption(selected)
         }
